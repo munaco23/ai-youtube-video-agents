@@ -1,0 +1,999 @@
+{
+  "name": "AI YouTube Video Agent Team",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Make a Video Now",
+        "formDescription": "Your agents will research, write, voice and edit the video, then email you for approval before anything is uploaded.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Topic",
+              "placeholder": "Optional. Leave empty and the Topic Scout picks one in your niche"
+            },
+            {
+              "fieldLabel": "Format",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Long video (8-10 min)"
+                  },
+                  {
+                    "option": "Short (under 60s)"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Your take",
+              "fieldType": "textarea",
+              "placeholder": "Optional but recommended: your own opinion on this story"
+            },
+            {
+              "fieldLabel": "After I approve",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Publish publicly"
+                  },
+                  {
+                    "option": "Unlisted"
+                  },
+                  {
+                    "option": "Private (I'll publish it myself)"
+                  }
+                ]
+              },
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "Your agents are working on it. You'll get an email with the video to approve (usually 10-30 minutes)."
+            }
+          }
+        }
+      },
+      "id": "e3fefb9b-4e6d-4ac1-a602-68e4db8799c2",
+      "name": "New Video Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        1632,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===================== SETTINGS =====================\n// Your channel's niche. The agents will ONLY make videos inside this niche.\nconst NICHE = `Rise and fall stories of famous companies and brands: why giants collapsed, how underdogs beat them, surprising comebacks, bold strategies that paid off, and the business lessons behind each story.`;\n\n// The point of view every video is told from. Edit this so it's true about you.\nconst CHANNEL_PERSPECTIVE = `The host is a young entrepreneur who builds AI automation for small businesses. They look at every story through practical lessons that small business owners, freelancers and new founders can apply today, and they are honest about mistakes instead of glorifying billionaires.`;\n\nconst APPROVER_EMAIL = 'you@gmail.com';     // where approval emails go\nconst MODEL = 'gemini-flash-latest';        // Gemini model\nconst VOICE = 'en-US-AndrewNeural';         // JSON2Video voice name\n// ====================================================\nconst f = $input.first().json;\nconst after = String(f['After I approve'] || 'Publish publicly');\nreturn [{ json: {\n  settings: { NICHE, CHANNEL_PERSPECTIVE, APPROVER_EMAIL, MODEL, VOICE },\n  topic: String(f['Topic'] || '').trim(),\n  angle: '',\n  isShort: String(f['Format'] || '').startsWith('Short'),\n  yourTake: String(f['Your take'] || '').trim(),\n  privacy: after.startsWith('Publish') ? 'public' : after.startsWith('Unlisted') ? 'unlisted' : 'private'\n} }];\n"
+      },
+      "id": "7c26d694-4696-44c2-9866-182a944dfa24",
+      "name": "Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        -64
+      ],
+      "notesInFlow": true,
+      "notes": "Edit niche & settings here"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "96c1c75c-a9cc-4c69-8e47-0181ee0642ef",
+              "leftValue": "={{ $json.topic }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3ca98a27-997a-4fd5-be62-0c5da5e4ad3a",
+      "name": "Has Topic?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $input.first().json;\nconst data = $getWorkflowStaticData('global');\nconst past = (data.pastTopics || []).slice(-80);\nconst today = new Date().toISOString().slice(0, 10);\n\nconst prompt = `You are the Topic Scout for an English YouTube channel. Today is ${today}.\n\nCHANNEL NICHE (stay strictly inside it): ${s.settings.NICHE}\n\nPick ONE topic for a ${s.isShort ? 'YouTube Short (under 60 seconds, so focus on one single surprising moment or fact)' : 'long video (8-10 minutes, a full story with a clear arc)'}.\n\nUse Google Search to choose a topic that is likely to get many views:\n- a company or brand most people recognise (people click on names they know)\n- a dramatic story arc: big rise, shocking fall, unlikely comeback, or a rivalry\n- bonus if it is connected to something in the news right now\n- enough reliable facts and numbers are available online\n- prefer a fresh angle over a story big channels have covered in the exact same way\n\nNever pick any of these topics, which the channel already covered: ${past.length ? past.join('; ') : 'none yet'}\n\nReturn ONLY a JSON object, no other text: {\"topic\": \"the specific video topic\", \"angle\": \"the specific angle that makes it interesting\", \"why\": \"one sentence on why viewers will click\"}`;\n\nreturn [{ json: { ...s, model: s.settings.MODEL, requestBody: {\n  contents: [{ role: 'user', parts: [{ text: prompt }] }],\n  tools: [{ google_search: {} }],\n  generationConfig: { temperature: 1.0 }\n} } }];\n"
+      },
+      "id": "7e0edc3b-b19a-4253-981e-cd3869a07a12",
+      "name": "Prepare Scout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $json.model + ':generateContent' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "1a1d6269-6ef3-40c5-a9b8-fe118725e4e5",
+      "name": "Topic Scout (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2528,
+        16
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notesInFlow": true,
+      "notes": "Agent: Topic Scout"
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst s = $('Settings').first().json;\nconst raw = ((res.candidates && res.candidates[0] && res.candidates[0].content && res.candidates[0].content.parts) || []).map(p => p.text || '').join('');\nlet obj;\ntry {\n  obj = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));\n} catch (e) {\n  throw new Error('Topic Scout reply could not be read: ' + raw.slice(0, 400));\n}\nif (!obj.topic) throw new Error('Topic Scout did not return a topic.');\nreturn [{ json: { ...s, topic: String(obj.topic), angle: String(obj.angle || '') } }];\n"
+      },
+      "id": "f6fb23e6-b68d-47a5-8cef-09f490aaac02",
+      "name": "Pick Topic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2896,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $input.first().json;\n\n// Remember topics so the channel never repeats itself (saved when the workflow is Active)\nconst data = $getWorkflowStaticData('global');\ndata.pastTopics = [...(data.pastTopics || []), s.topic].slice(-150);\n\nconst prompt = `You are the Researcher for a YouTube channel in this niche: ${s.settings.NICHE}\n\nTopic: ${s.topic}\n${s.angle ? 'Angle: ' + s.angle : ''}\n\nUse Google Search thoroughly. Prefer reliable sources: company reports and filings, major business news outlets, founder interviews and respected analysts. Write a research brief with these sections:\n1. SUMMARY - the story in 3-4 sentences.\n2. BACKGROUND - founding, founders, original idea and market.\n3. TIMELINE - key events with dates, in order.\n4. KEY NUMBERS - revenue, profit or loss, valuation, users, market share, funding. Give the year for every number and the source.\n5. THE TURNING POINT.\n6. WHAT WENT RIGHT / WRONG AND WHY - with expert or analyst reasoning where available.\n7. COMPETITORS AND MARKET CONTEXT.\n8. SURPRISING FACTS.\n9. DISPUTED OR UNCERTAIN CLAIMS.\n10. LESSONS for business owners.\n\nOnly include facts you found in sources. Never invent numbers, quotes or dates.`;\n\nreturn [{ json: { ...s, model: s.settings.MODEL, requestBody: {\n  contents: [{ role: 'user', parts: [{ text: prompt }] }],\n  tools: [{ google_search: {} }],\n  generationConfig: { temperature: 0.3 }\n} } }];\n"
+      },
+      "id": "04f9d2e1-8557-4213-b69b-62b6fc563dea",
+      "name": "Prepare Research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "5c7160b4-3a65-40e9-969a-143e912edcd6",
+      "name": "Daily Short (9am)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1408,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1,
+                4
+              ],
+              "triggerAtHour": 10
+            }
+          ]
+        }
+      },
+      "id": "6a685c99-b114-4dd2-9e32-ecb814c7bbc3",
+      "name": "Long Video (Mon & Thu 10am)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1408,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { Topic: '', Format: 'Short (under 60s)', 'Your take': '', 'After I approve': 'Publish publicly' } }];"
+      },
+      "id": "ee026e02-f2a5-4c02-a5c0-633d8b716a22",
+      "name": "Short Defaults",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { Topic: '', Format: 'Long video (8-10 min)', 'Your take': '', 'After I approve': 'Publish publicly' } }];"
+      },
+      "id": "827d4af4-6f78-4180-b279-eef71649ca35",
+      "name": "Long Defaults",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $json.model + ':generateContent' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "74d3844b-4ad4-4ae5-a94e-292b2e10ae73",
+      "name": "Researcher (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1376,
+        304
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notesInFlow": true,
+      "notes": "Agent: Researcher"
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst s = $('Prepare Research').first().json;\nconst cand = res.candidates && res.candidates[0];\nconst research = ((cand && cand.content && cand.content.parts) || []).map(x => x.text || '').join('');\nif (!research) throw new Error('Researcher returned no text: ' + JSON.stringify(res).slice(0, 500));\n\nconst seen = new Set();\nconst sources = [];\nfor (const c of ((cand.groundingMetadata && cand.groundingMetadata.groundingChunks) || [])) {\n  const u = c.web && c.web.uri;\n  if (u && !seen.has(u)) { seen.add(u); sources.push({ title: (c.web.title || 'source'), url: u }); }\n}\n\nconst lengthRules = s.isShort\n  ? 'This is a YouTube SHORT: 110-140 words in total, split into 6-8 scenes of 12-22 words each. The first scene is a strong hook. The last line is punchy or loops back to the start.'\n  : 'This is a LONG video: 1,200-1,500 words in total (about 8-10 minutes), split into 35-55 scenes of 25-40 words each. Structure: hook (no greeting or channel intro), context, the rise, the turning point, the outcome, what we can learn, outro with one question for viewers.';\n\nconst prompt = `You are the Scriptwriter for an English YouTube channel that makes business case study videos.\n\nTopic: ${s.topic}\n\n${lengthRules}\n\nStyle: conversational, clear, short sentences, written to be spoken by a narrator. Build curiosity and tell it as a story. Avoid clichés like \"In today's video\", \"buckle up\", \"game-changer\", \"let's dive in\".\n\nUse ONLY facts from the research brief. Never invent numbers, quotes or dates. Leave out anything the brief marks as uncertain.\n\n${s.angle ? 'Angle: ' + s.angle : ''}\n\nChannel point of view: ${s.settings.CHANNEL_PERSPECTIVE}\nTell the story from this point of view. In the lessons part, speak in first person as the host (\"I think...\", \"What I find interesting...\") and give a genuine opinion, not generic advice.\n${s.yourTake ? 'The host\\'s own opinion, which MUST be included naturally: \"' + s.yourTake + '\"' : ''}\n\nFor every scene, also write \"search_query\": 2-4 simple English words describing generic stock footage to show (for example \"busy stock market screens\", \"factory assembly line\", \"person using smartphone\"). Never use brand names, logos or real people's names in search_query, because stock sites don't have them.\n\nReturn ONLY a JSON object with these keys:\n\"title\": under 70 characters, curiosity-driven, never misleading\n\"description\": ${s.isShort ? '2-3 sentences' : '150-250 words, first two sentences contain the main keywords, end with a question for comments; no timestamps or links'}\n\"tags\": array of 10-15 search phrases\n\"hashtags\": array of 3 hashtags starting with #\n\"scenes\": array of objects with \"narration\" and \"search_query\"\n\nRESEARCH BRIEF:\n${research}`;\n\nreturn [{ json: { research, sources, model: s.model, requestBody: {\n  contents: [{ role: 'user', parts: [{ text: prompt }] }],\n  generationConfig: { temperature: 0.8, maxOutputTokens: 16384, responseMimeType: 'application/json' }\n} } }];\n"
+      },
+      "id": "da40366e-c32c-4e80-81bd-76bbe0c211ae",
+      "name": "Prepare Script Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $json.model + ':generateContent' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "6d9a26a6-f1a4-4b31-ae85-c9968c4380c4",
+      "name": "Scriptwriter (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1824,
+        304
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notesInFlow": true,
+      "notes": "Agent: Scriptwriter"
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst s = $('Prepare Research').first().json;\nconst raw = ((res.candidates && res.candidates[0] && res.candidates[0].content && res.candidates[0].content.parts) || []).map(p => p.text || '').join('');\nlet script;\ntry {\n  script = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));\n} catch (e) {\n  throw new Error('Could not read the script from Gemini. Reply started with: ' + raw.slice(0, 400));\n}\nconst scenes = (script.scenes || []).filter(x => x && x.narration);\nif (scenes.length < 3) throw new Error('The script has too few scenes. Try running again.');\n\n// Save the script details for later steps\nconst staticScript = { title: script.title, description: script.description, tags: script.tags || [], hashtags: script.hashtags || [] };\n\nreturn scenes.map((sc, i) => ({ json: {\n  index: i,\n  narration: String(sc.narration).trim(),\n  search_query: String(sc.search_query || s.topic).trim(),\n  orientation: s.isShort ? 'portrait' : 'landscape',\n  meta: i === 0 ? staticScript : null\n} }));\n"
+      },
+      "id": "9a91a9d4-2dcb-4200-a4c7-1f644774aaf2",
+      "name": "Split Scenes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.pexels.com/videos/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.search_query }}"
+            },
+            {
+              "name": "orientation",
+              "value": "={{ $json.orientation }}"
+            },
+            {
+              "name": "per_page",
+              "value": "8"
+            },
+            {
+              "name": "size",
+              "value": "medium"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "id": "cb4e5765-f4e6-433f-a0c8-17c1b419abb7",
+      "name": "Find Stock Footage (Pexels)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2272,
+        304
+      ],
+      "notesInFlow": true,
+      "onError": "continueRegularOutput",
+      "notes": "Agent: Visual Director"
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $('Prepare Research').first().json;\nconst scenes = $('Split Scenes').all().map(i => i.json);\nconst results = $input.all().map(i => i.json);\nconst meta = scenes[0].meta;\n\nfunction pickFile(video, portrait) {\n  const files = (video.video_files || []).filter(f => (f.file_type || '').includes('mp4') && f.link);\n  const ok = files.filter(f => {\n    const long = Math.max(f.width || 0, f.height || 0);\n    const isPortrait = (f.height || 0) > (f.width || 0);\n    return long >= 1200 && long <= 2000 && isPortrait === portrait;\n  });\n  const list = ok.length ? ok : files.filter(f => Math.max(f.width || 0, f.height || 0) <= 2000);\n  list.sort((a, b) => (b.width * b.height) - (a.width * a.height));\n  return list[0] ? list[0].link : null;\n}\n\nconst used = new Set();\nconst clips = [];\nlet lastGood = null;\nscenes.forEach((sc, i) => {\n  const videos = (results[i] && results[i].videos) || [];\n  let chosen = null;\n  for (const v of videos) {\n    if (used.has(v.id)) continue;\n    const link = pickFile(v, s.isShort);\n    if (link) { chosen = link; used.add(v.id); break; }\n  }\n  clips.push(chosen);\n  if (chosen) lastGood = chosen;\n});\n// Fill any scene without footage with the nearest clip that worked\nconst firstGood = clips.find(Boolean);\nif (!firstGood) throw new Error('No stock footage found on Pexels. Check the Pexels API key.');\nlet prev = firstGood;\nfor (let i = 0; i < clips.length; i++) { if (clips[i]) prev = clips[i]; else clips[i] = prev; }\n\nconst movie = {\n  resolution: s.isShort ? 'instagram-story' : 'full-hd',\n  quality: 'high',\n  scenes: scenes.map((sc, i) => ({\n    elements: [\n      { type: 'video', src: clips[i], loop: -1, duration: -2, volume: 0, resize: 'cover' },\n      { type: 'voice', text: sc.narration, voice: s.settings.VOICE }\n    ]\n  })),\n  elements: [{ type: 'subtitles', language: 'en' }]\n};\n\n// Prepare publishing details\nlet title = String(meta.title || s.topic).trim();\nif (s.isShort && !/#shorts/i.test(title) && title.length + 8 <= 100) title += ' #Shorts';\ntitle = title.slice(0, 100);\nconst hashtags = (meta.hashtags || []).map(String);\nif (s.isShort && !hashtags.some(h => /#shorts/i.test(h))) hashtags.unshift('#Shorts');\nconst description = (String(meta.description || '') + '\\n\\n' + hashtags.join(' ')).slice(0, 4900);\nlet tags = [], total = 0;\nfor (const t of (meta.tags || [])) {\n  const x = String(t).replace(/[<>,]/g, '').trim();\n  if (!x || total + x.length + 1 > 450) continue;\n  tags.push(x); total += x.length + 1;\n}\n\nreturn [{ json: {\n  movie, title, description, tags: tags.join(','),\n  narration: scenes.map(sc => sc.narration).join('\\n\\n')\n} }];\n"
+      },
+      "id": "962aea0b-f6b3-40f6-8bdb-b468ccf0e841",
+      "name": "Build Video JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        304
+      ],
+      "notesInFlow": true,
+      "notes": "Agent: Editor"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.json2video.com/v2/movies",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.movie) }}",
+        "options": {}
+      },
+      "id": "ff91d199-2eb5-4915-8f43-c86814f8e17c",
+      "name": "Start Render (JSON2Video)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2720,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 60
+      },
+      "id": "da0b51ad-7e9d-4759-95c9-9bea2b9c1525",
+      "name": "Wait 1 Minute",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2944,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.json2video.com/v2/movies?project=' + $('Start Render (JSON2Video)').first().json.project }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "1336236a-143e-4443-91eb-495dd04b6dc5",
+      "name": "Check Render",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3168,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst m = r.movie || {};\nconst status = String(m.status || '').toLowerCase();\nif (status === 'error' || r.success === false) {\n  throw new Error('JSON2Video render failed: ' + (m.message || r.message || JSON.stringify(r).slice(0, 400)));\n}\nif (status === 'done' && m.url) return [{ json: { done: true, url: m.url } }];\nif ($runIndex >= 45) throw new Error('Render is taking longer than 45 minutes. Check your JSON2Video dashboard.');\nreturn [{ json: { done: false, status } }];\n"
+      },
+      "id": "e846f05b-faae-4b5c-9ef4-21ae9fdaf01f",
+      "name": "Render Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "8f8cdba6-7815-4661-9cec-d9b646042979",
+              "leftValue": "={{ $json.done }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "73c701fe-6feb-40d5-a1fd-b07283b31688",
+      "name": "Render Done?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $('Prepare Research').first().json;\nconst v = $('Build Video JSON').first().json;\nconst p = $('Prepare Script Prompt').first().json;\nconst url = $input.first().json.url;\nconst esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst sources = p.sources.slice(0, 15).map(x => `<li><a href=\"${x.url}\">${esc(x.title)}</a></li>`).join('');\nconst html = `<h2>New ${s.isShort ? 'Short' : 'video'} ready for review</h2>\n<p><b><a href=\"${url}\">▶ Watch the video</a></b></p>\n<p><b>Title:</b> ${esc(v.title)}</p>\n<p><b>After approval it will be uploaded as:</b> ${s.privacy}</p>\n<p><b>Before approving, check:</b> the facts against the sources, that the footage matches the story, and that your opinion is in it.</p>\n<h3>Description</h3><p>${esc(v.description).replace(/\\n/g, '<br>')}</p>\n<h3>Sources</h3><ul>${sources || '<li>No sources returned</li>'}</ul>\n<h3>Full narration</h3><p>${esc(v.narration).replace(/\\n/g, '<br>')}</p>`;\nreturn [{ json: { url, html, email: s.settings.APPROVER_EMAIL, subject: 'Review: ' + v.title } }];\n"
+      },
+      "id": "1f8c7485-7b31-46e2-a7dc-cfa7080ae585",
+      "name": "Build Approval Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "sendAndWait",
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Approve & Upload",
+            "disapproveLabel": "Reject"
+          }
+        },
+        "options": {}
+      },
+      "id": "effb96d3-a436-47a0-8c3e-2699d62ae305",
+      "name": "Ask for Approval",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2224,
+        624
+      ],
+      "notesInFlow": true,
+      "notes": "Waits for your click"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "c037b3e7-73db-47b9-9d5a-d01b68a30ad5",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d57e52ce-2254-4db6-b93f-21eefa1cfde4",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2448,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Build Approval Email').first().json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "id": "4a133933-4163-4a21-897b-a27ad89a5b17",
+      "name": "Download Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2672,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('Build Video JSON').first().json.title }}",
+        "regionCode": "US",
+        "categoryId": "27",
+        "options": {
+          "description": "={{ $('Build Video JSON').first().json.description }}",
+          "notifySubscribers": true,
+          "privacyStatus": "={{ $('Prepare Research').first().json.privacy }}",
+          "selfDeclaredMadeForKids": false,
+          "tags": "={{ $('Build Video JSON').first().json.tags }}"
+        }
+      },
+      "id": "416addab-c749-4923-af41-eaca4da9c264",
+      "name": "Upload to YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        2896,
+        528
+      ],
+      "notesInFlow": true,
+      "notes": "Agent: Publisher"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sendTo": "={{ $('Build Approval Email').first().json.email }}",
+        "subject": "=Uploaded: {{ $('Build Video JSON').first().json.title }}",
+        "emailType": "text",
+        "message": "=Your video is on YouTube: https://youtu.be/{{ $json.id || $json.uploadId }}\n\nStatus: {{ $('Prepare Research').first().json.privacy }}. If it uses a realistic AI voice, check the 'altered or synthetic content' setting in YouTube Studio.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "fcb04f72-3fa3-475e-975c-3dd7d92bd503",
+      "name": "Send Confirmation",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3120,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sendTo": "={{ $('Build Approval Email').first().json.email }}",
+        "subject": "=Rejected: {{ $('Build Video JSON').first().json.title }}",
+        "emailType": "text",
+        "message": "=Nothing was uploaded. Submit the form again with a changed topic or a clearer 'Your take' to make a new version.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "09bb9358-a698-4fd3-9a07-5c639dce7635",
+      "name": "Send Rejected Note",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2672,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Full Video Agent Team\nSchedule or form → Topic Scout (your niche) → Research → Script → Stock footage → AI voice + editing (JSON2Video) → **your approval by email** → YouTube upload\n\n**Credentials needed (each service needs its OWN Header Auth credential):**\n- Gemini: Header Auth, name `x-goog-api-key` (Topic Scout, Researcher, Scriptwriter)\n- Pexels: Header Auth, name `Authorization` = your Pexels API key\n- JSON2Video: Header Auth, name `x-api-key` (Start Render + Check Render)\n- Gmail OAuth2 (3 Gmail nodes)\n- YouTube OAuth2 (Upload to YouTube)\n\nThen edit NICHE, CHANNEL_PERSPECTIVE and APPROVER_EMAIL in **Settings**. Disable a schedule trigger if you want fewer videos.",
+        "height": 440,
+        "width": 520
+      },
+      "id": "26c7b7f6-5652-4719-9c08-274c8f3fd6b2",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2336,
+        -544
+      ]
+    }
+  ],
+  "connections": {
+    "New Video Form": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Short (9am)": {
+      "main": [
+        [
+          {
+            "node": "Short Defaults",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Long Video (Mon & Thu 10am)": {
+      "main": [
+        [
+          {
+            "node": "Long Defaults",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Short Defaults": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Long Defaults": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Has Topic?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Topic?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Research",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Scout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Scout": {
+      "main": [
+        [
+          {
+            "node": "Topic Scout (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Topic Scout (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Pick Topic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Topic": {
+      "main": [
+        [
+          {
+            "node": "Prepare Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Research": {
+      "main": [
+        [
+          {
+            "node": "Researcher (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Researcher (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Script Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Script Prompt": {
+      "main": [
+        [
+          {
+            "node": "Scriptwriter (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scriptwriter (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Split Scenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Scenes": {
+      "main": [
+        [
+          {
+            "node": "Find Stock Footage (Pexels)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Stock Footage (Pexels)": {
+      "main": [
+        [
+          {
+            "node": "Build Video JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Video JSON": {
+      "main": [
+        [
+          {
+            "node": "Start Render (JSON2Video)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Render (JSON2Video)": {
+      "main": [
+        [
+          {
+            "node": "Wait 1 Minute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 1 Minute": {
+      "main": [
+        [
+          {
+            "node": "Check Render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Render": {
+      "main": [
+        [
+          {
+            "node": "Render Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Status": {
+      "main": [
+        [
+          {
+            "node": "Render Done?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Done?": {
+      "main": [
+        [
+          {
+            "node": "Build Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 1 Minute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Approval Email": {
+      "main": [
+        [
+          {
+            "node": "Ask for Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask for Approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Download Video",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Rejected Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Video": {
+      "main": [
+        [
+          {
+            "node": "Upload to YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to YouTube": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
